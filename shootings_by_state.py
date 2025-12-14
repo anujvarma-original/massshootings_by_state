@@ -1,21 +1,3 @@
-Perfect — I can provide a **full Python script** that does exactly that. This script will:
-
-1. Download **Mother Jones** and **Gun Violence Archive (GVA)** CSVs (or read local copies if you prefer).
-2. Parse both datasets, normalize columns (dates, states).
-3. Aggregate **mass shootings by year and state**, including counts for:
-
-   * Mother Jones (MJ, strict: 4+ killed, public)
-   * GVA (inclusive: 4+ shot)
-4. Mark **school shootings with ★** if a column exists or inferred from location.
-5. Produce a **ready-to-use HTML report** with:
-
-   * A **state × year table**
-   * A **national trend chart (SVG/Plotly)**
-   * A **U.S. map placeholder** (or choropleth if Plotly installed).
-
-Below is a **self-contained Python script** using `pandas`, `plotly`, and standard libraries:
-
-```python
 # -*- coding: utf-8 -*-
 """
 Hybrid Mass Shooting Report Generator (MJ + GVA)
@@ -167,28 +149,3 @@ with open('mass_shootings_report.html','w', encoding='utf-8') as f:
     f.write(html_content)
 
 print("HTML report generated: mass_shootings_report.html")
-```
-
----
-
-### ✅ Features of This Script
-
-1. Downloads CSVs from MJ and GVA (replace URLs if needed).
-2. Parses dates, counts, and marks school shootings.
-3. Aggregates **year × state** for both datasets.
-4. Generates an **HTML table** and **interactive Plotly line chart** for national trends.
-5. Includes a **U.S. map placeholder** (you can later replace with choropleth using Plotly).
-
----
-
-### 🔹 Next Steps
-
-* Provide actual GVA CSV URL (or local path) so the script can run end-to-end.
-* Optionally, add **Plotly choropleth map** using `px.choropleth` for state-level visualization.
-* Populate school shootings more precisely from location info if needed.
-
----
-
-If you want, I can **enhance this script to produce a full choropleth U.S. map** with the mass-shooting count intensity for each state.
-
-Do you want me to do that next?
