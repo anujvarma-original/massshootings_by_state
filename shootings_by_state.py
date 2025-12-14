@@ -1,151 +1,92 @@
-# -*- coding: utf-8 -*-
-"""
-Hybrid Mass Shooting Report Generator (MJ + GVA)
-Requirements:
-  - pandas
-  - plotly
-  - requests
-"""
-
+# mass_shootings_app.py
+import streamlit as st
 import pandas as pd
 import plotly.express as px
-import requests
 from io import StringIO
 
-# -------------------------------
-# 1️⃣ Download CSVs or load local
-# -------------------------------
+st.set_page_config(page_title="US Mass Shootings Analysis", layout="wide")
 
-# Mother Jones CSV (ArcGIS / GitHub mirror)
-MJ_CSV_URL = "https://gist.githubusercontent.com/rlvaugh/beed70510dcff259aeb120f0abf63533/raw/mass_shootings.csv"
+st.title("U.S. Mass Shootings — Hybrid MJ + GVA")
 
-# Gun Violence Archive CSV (The Trace Data Hub)
-GVA_CSV_URL = "https://datahub.io/JohnDoe/mass-shootings/r/mass-shootings.csv"  # Replace with actual URL
+st.markdown("""
+This app allows you to upload **Mother Jones (MJ)** and **Gun Violence Archive (GVA)** CSVs, aggregates mass shootings by **Year × State**, marks **school shootings**, and displays tables and charts.
+""")
 
-def download_csv(url):
-    resp = requests.get(url)
-    if resp.status_code == 200:
-        return StringIO(resp.text)
-    else:
-        raise ValueError(f"Failed to download CSV from {url}")
+# ----------------------------------------
+# 1️⃣ Upload CSVs
+# ----------------------------------------
+mj_file = st.file_uploader("Upload Mother Jones CSV", type=["csv"])
+gva_file = st.file_uploader("Upload GVA CSV", type=["csv"])
 
-# Load datasets
-mj_df = pd.read_csv(download_csv(MJ_CSV_URL))
-gva_df = pd.read_csv(download_csv(GVA_CSV_URL))
+if mj_file and gva_file:
+    # Load CSVs
+    mj_df = pd.read_csv(mj_file)
+    gva_df = pd.read_csv(gva_file)
 
-# -------------------------------
-# 2️⃣ Parse & normalize columns
-# -------------------------------
+    # ----------------------------------------
+    # 2️⃣ Parse & normalize
+    # ----------------------------------------
+    # MJ
+    mj_df['Date'] = pd.to_datetime(mj_df['Date'], errors='coerce')
+    mj_df['Year'] = mj_df['Date'].dt.year
+    mj_df['School'] = mj_df.get('School', False)
+    mj_df['MJ_Count'] = 1
 
-# MJ dataset
-# Columns: Date, State, City, Killed, Injured, School
-mj_df['Date'] = pd.to_datetime(mj_df['Date'])
-mj_df['Year'] = mj_df['Date'].dt.year
-mj_df['School'] = mj_df.get('School', False)  # If missing, default False
-mj_df['MJ_Count'] = 1  # Each row counts as 1 incident
+    # GVA
+    gva_df['Incident Date'] = pd.to_datetime(gva_df['Incident Date'], errors='coerce')
+    gva_df['Year'] = gva_df['Incident Date'].dt.year
+    gva_df['School'] = gva_df.get('School', False)
+    gva_df['GVA_Count'] = 1
 
-# GVA dataset
-# Columns: Incident Date, State, City, # Killed, # Injured, Total Victims, School
-gva_df['Incident Date'] = pd.to_datetime(gva_df['Incident Date'])
-gva_df['Year'] = gva_df['Incident Date'].dt.year
-gva_df['School'] = gva_df.get('School', False)
-gva_df['GVA_Count'] = 1
+    # ----------------------------------------
+    # 3️⃣ Aggregate Year × State
+    # ----------------------------------------
+    mj_agg = mj_df.groupby(['Year','State']).agg(
+        MJ_Count=('MJ_Count','sum'),
+        School_Incidents=('School','sum')
+    ).reset_index()
 
-# -------------------------------
-# 3️⃣ Aggregate by Year x State
-# -------------------------------
+    gva_agg = gva_df.groupby(['Year','State']).agg(
+        GVA_Count=('GVA_Count','sum'),
+        School_Incidents=('School','sum')
+    ).reset_index()
 
-mj_agg = mj_df.groupby(['Year', 'State']).agg(
-    MJ_Count=('MJ_Count','sum'),
-    School_Incidents=('School','sum')
-).reset_index()
+    combined = pd.merge(
+        mj_agg, gva_agg, on=['Year','State'], how='outer', suffixes=('_MJ','_GVA')
+    ).fillna(0)
 
-gva_agg = gva_df.groupby(['Year', 'State']).agg(
-    GVA_Count=('GVA_Count','sum'),
-    School_Incidents=('School','sum')
-).reset_index()
+    combined['School'] = combined.apply(lambda row: '★' if row['School_Incidents_MJ']>0 or row['School_Incidents_GVA']>0 else '', axis=1)
 
-# Merge MJ and GVA aggregates
-combined = pd.merge(
-    mj_agg, gva_agg, on=['Year','State'], how='outer', suffixes=('_MJ','_GVA')
-).fillna(0)
+    # ----------------------------------------
+    # 4️⃣ Display Table
+    # ----------------------------------------
+    st.subheader("State × Year Mass Shootings Table")
+    st.dataframe(combined[['Year','State','MJ_Count','GVA_Count','School']])
 
-# For HTML, mark ★ for school shootings
-def school_marker(row):
-    if row['School_Incidents_MJ'] > 0 or row['School_Incidents_GVA'] > 0:
-        return '★'
-    return ''
+    # ----------------------------------------
+    # 5️⃣ National Trend Chart
+    # ----------------------------------------
+    national_trend = combined.groupby('Year').agg(
+        MJ_Total=('MJ_Count','sum'),
+        GVA_Total=('GVA_Count','sum')
+    ).reset_index()
 
-combined['School'] = combined.apply(school_marker, axis=1)
+    fig = px.line(
+        national_trend,
+        x='Year',
+        y=['MJ_Total','GVA_Total'],
+        labels={'value':'Mass Shootings','variable':'Dataset'},
+        title='National Mass Shooting Trend (MJ vs GVA)'
+    )
+    st.subheader("National Mass Shooting Trend")
+    st.plotly_chart(fig, use_container_width=True)
 
-# -------------------------------
-# 4️⃣ Generate HTML Table
-# -------------------------------
+    # ----------------------------------------
+    # 6️⃣ Optional: U.S. Map Placeholder
+    # ----------------------------------------
+    st.subheader("U.S. Map — Mass Shooting Density by State (Placeholder)")
+    st.image("https://via.placeholder.com/800x400?text=State+Mass+Shooting+Map+Placeholder")
+    st.markdown("Replace with dynamic choropleth once full state-level data is available.")
 
-html_table = combined.to_html(
-    columns=['Year','State','MJ_Count','GVA_Count','School'],
-    index=False,
-    border=1,
-    justify='center',
-    classes='mass-shooting-table'
-)
-
-# -------------------------------
-# 5️⃣ Generate Trend Chart (National totals)
-# -------------------------------
-
-national_trend = combined.groupby('Year').agg(
-    MJ_Total=('MJ_Count','sum'),
-    GVA_Total=('GVA_Count','sum')
-).reset_index()
-
-fig = px.line(
-    national_trend,
-    x='Year',
-    y=['MJ_Total','GVA_Total'],
-    labels={'value':'Mass Shootings','variable':'Dataset'},
-    title='National Mass Shooting Trend (MJ vs GVA)'
-)
-trend_chart_html = fig.to_html(full_html=False, include_plotlyjs='cdn')
-
-# -------------------------------
-# 6️⃣ Export full HTML report
-# -------------------------------
-
-html_content = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Hybrid Mass Shooting Report (MJ + GVA)</title>
-<style>
-body {{ font-family: Arial, sans-serif; margin: 20px; }}
-h1 {{ color: #003366; }}
-.mass-shooting-table th {{ background-color: #f2f2f2; padding: 5px; }}
-.mass-shooting-table td {{ padding: 5px; text-align: center; }}
-.school {{ color: red; font-weight: bold; }}
-</style>
-</head>
-<body>
-<h1>U.S. Mass Shootings — Hybrid MJ + GVA</h1>
-<p>School shootings are marked with <span class="school">★</span>.</p>
-
-<h2>State x Year Mass Shootings Table</h2>
-{html_table}
-
-<h2>National Trend Chart</h2>
-{trend_chart_html}
-
-<h2>U.S. Map Placeholder</h2>
-<img src="https://via.placeholder.com/800x400?text=State+Mass+Shooting+Map+Placeholder" alt="State Mass Shooting Map">
-<p>Replace with dynamic map once full data processed.</p>
-
-</body>
-</html>
-"""
-
-# Save HTML
-with open('mass_shootings_report.html','w', encoding='utf-8') as f:
-    f.write(html_content)
-
-print("HTML report generated: mass_shootings_report.html")
+else:
+    st.info("Upload both Mother Jones and GVA CSV files to proceed.")
